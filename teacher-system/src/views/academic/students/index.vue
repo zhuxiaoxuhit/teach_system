@@ -189,6 +189,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { getStudentList, createStudent, updateStudent, deleteStudent } from '@/api/student'
 
 const activeTab = ref('all')
 const dialogVisible = ref(false)
@@ -287,48 +288,39 @@ const handleDelete = async (row: any) => {
       type: 'warning'
     })
 
-    const index = allStudents.value.findIndex(s => s.id === row.id)
-    if (index > -1) {
-      allStudents.value.splice(index, 1)
-      pagination.total--
-      loadTableData()
-      ElMessage.success('删除成功')
+    await deleteStudent(row.id)
+    ElMessage.success('删除成功')
+    // 重新加载数据
+    await fetchStudents()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除失败')
     }
-  } catch {
-    // 取消删除
   }
 }
 
 const handleSubmit = async () => {
   if (!formRef.value) return
 
-  await formRef.value.validate((valid) => {
+  await formRef.value.validate(async (valid) => {
     if (valid) {
-      if (studentForm.id) {
-        // 编辑
-        const index = allStudents.value.findIndex(s => s.id === studentForm.id)
-        if (index > -1) {
-          allStudents.value[index] = { ...allStudents.value[index], ...studentForm }
+      try {
+        if (studentForm.id) {
+          // 编辑
+          await updateStudent(studentForm.id, studentForm)
           ElMessage.success('编辑成功')
+        } else {
+          // 新增
+          await createStudent(studentForm)
+          ElMessage.success('新增成功')
         }
-      } else {
-        // 新增
-        const newStudent = {
-          ...studentForm,
-          id: String(Date.now()),
-          isFollowed: false,
-          cardBound: false,
-          rating: 0,
-          balance: 0,
-          status: '在读'
-        }
-        allStudents.value.unshift(newStudent)
-        pagination.total++
-        ElMessage.success('新增成功')
+        // 重新加载数据
+        await fetchStudents()
+        dialogVisible.value = false
+        resetForm()
+      } catch (error: any) {
+        ElMessage.error(error.message || '操作失败')
       }
-      loadTableData()
-      dialogVisible.value = false
-      resetForm()
     }
   })
 }
@@ -409,8 +401,45 @@ const loadTableData = () => {
   tableData.value = allStudents.value.slice(start, end)
 }
 
+// 从后端获取学员数据
+const fetchStudents = async () => {
+  try {
+    const res = await getStudentList({
+      page: pagination.current,
+      pageSize: pagination.pageSize,
+      status: searchForm.status || undefined,
+      name: searchForm.searchValue || undefined
+    })
+
+    if (res.code === 200) {
+      // 将后端数据映射为前端格式
+      tableData.value = res.data.list.map((student: any) => ({
+        id: student.id,
+        name: student.name,
+        gender: student.gender,
+        relation: student.parent_relation || '母亲',
+        phone: student.phone,
+        isFollowed: false,
+        cardBound: false,
+        rating: 0,
+        balance: 0,
+        status: student.status,
+        campus: student.campus
+      }))
+      pagination.total = res.data.total
+      allStudents.value = [...tableData.value]
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载数据失败')
+    // 如果后端失败，使用 mock 数据
+    tableData.value = generateMockStudents()
+    allStudents.value = [...tableData.value]
+    pagination.total = tableData.value.length
+  }
+}
+
 onMounted(() => {
-  loadTableData()
+  fetchStudents()
 })
 </script>
 

@@ -111,6 +111,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import * as echarts from 'echarts'
+import { getRecruitmentStats, getAcademicStats } from '@/api/statistics'
+import { ElMessage } from 'element-plus'
 
 const activeTab = ref('campus-analysis')
 const dataScope = ref('经办校区')
@@ -127,42 +129,87 @@ const reportOptions = reactive({
 const chart1Ref = ref()
 const chart2Ref = ref()
 
-onMounted(() => {
-  // 初始化图表
-  if (chart1Ref.value) {
-    const chart1 = echarts.init(chart1Ref.value)
-    chart1.setOption({
-      xAxis: { type: 'category', data: ['11/01', '11/07', '11/13', '11/19', '11/25'] },
-      yAxis: { type: 'value' },
-      series: [{
-        data: [1, 1, 2, 1, 1],
-        type: 'bar',
-        itemStyle: { color: '#1890ff' }
-      }]
-    })
-  }
+const loadRecruitmentData = async () => {
+  try {
+    const res = await getRecruitmentStats()
+    if (res.code === 200 && chart1Ref.value) {
+      const chart1 = echarts.init(chart1Ref.value)
+      const dates = res.data.consultations.map((item: any) => {
+        const date = new Date(item.date)
+        return `${date.getMonth() + 1}/${date.getDate()}`
+      })
+      const counts = res.data.consultations.map((item: any) => item.count)
 
-  if (chart2Ref.value) {
-    const chart2 = echarts.init(chart2Ref.value)
-    chart2.setOption({
-      xAxis: { type: 'category', data: ['2025/10/01~2025/10/31', '2025/10/01~2025/10/31'] },
-      yAxis: { type: 'value', max: 50 },
-      series: [
-        {
-          name: '新报人次',
+      chart1.setOption({
+        title: { text: `新增咨询总数: ${res.data.enrollmentTotal}`, left: 'center', top: 10, textStyle: { fontSize: 14 } },
+        xAxis: { type: 'category', data: dates },
+        yAxis: { type: 'value' },
+        series: [{
+          data: counts,
           type: 'bar',
-          data: [9, 27],
           itemStyle: { color: '#1890ff' }
-        },
-        {
-          name: '续报人次',
-          type: 'bar',
-          data: [8, 42],
-          itemStyle: { color: '#f5222d' }
-        }
-      ]
-    })
+        }]
+      })
+    }
+  } catch (error: any) {
+    ElMessage.error('加载招生数据失败')
+    // 使用默认数据
+    if (chart1Ref.value) {
+      const chart1 = echarts.init(chart1Ref.value)
+      chart1.setOption({
+        xAxis: { type: 'category', data: ['无数据'] },
+        yAxis: { type: 'value' },
+        series: [{ data: [0], type: 'bar', itemStyle: { color: '#1890ff' } }]
+      })
+    }
   }
+}
+
+const loadAcademicData = async () => {
+  try {
+    const res = await getAcademicStats()
+    if (res.code === 200 && chart2Ref.value) {
+      const chart2 = echarts.init(chart2Ref.value)
+      const dates = res.data.classRecords.map((item: any) => {
+        const date = new Date(item.date)
+        return `${date.getMonth() + 1}/${date.getDate()}`
+      })
+      const counts = res.data.classRecords.map((item: any) => item.count)
+
+      chart2.setOption({
+        title: {
+          text: `在读学员: ${res.data.activeStudentsCount} | 在读班级: ${res.data.classStats.total || 0}`,
+          left: 'center',
+          top: 10,
+          textStyle: { fontSize: 14 }
+        },
+        xAxis: { type: 'category', data: dates },
+        yAxis: { type: 'value' },
+        series: [{
+          name: '上课记录',
+          type: 'line',
+          data: counts,
+          itemStyle: { color: '#52c41a' }
+        }]
+      })
+    }
+  } catch (error: any) {
+    ElMessage.error('加载教务数据失败')
+    // 使用默认数据
+    if (chart2Ref.value) {
+      const chart2 = echarts.init(chart2Ref.value)
+      chart2.setOption({
+        xAxis: { type: 'category', data: ['无数据'] },
+        yAxis: { type: 'value' },
+        series: [{ data: [0], type: 'line', itemStyle: { color: '#52c41a' } }]
+      })
+    }
+  }
+}
+
+onMounted(async () => {
+  await loadRecruitmentData()
+  await loadAcademicData()
 })
 </script>
 

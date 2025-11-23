@@ -10,6 +10,10 @@ const studentRoutes = require('./routes/students');
 const classRoutes = require('./routes/classes');
 const recordRoutes = require('./routes/records');
 const evaluationRoutes = require('./routes/evaluations');
+const statisticsRoutes = require('./routes/statistics');
+const courseRoutes = require('./routes/courses');
+const enrollmentRoutes = require('./routes/enrollments');
+const courseUpgradeRoutes = require('./routes/course-upgrades');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -31,6 +35,10 @@ app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/records', recordRoutes);
 app.use('/api/evaluations', evaluationRoutes);
+app.use('/api/statistics', statisticsRoutes);
+app.use('/api/courses', courseRoutes);
+app.use('/api/enrollments', enrollmentRoutes);
+app.use('/api/course-upgrades', courseUpgradeRoutes);
 
 // 健康检查
 app.get('/health', (req, res) => {

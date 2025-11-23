@@ -118,10 +118,17 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // 转换日期格式：ISO 8601 -> YYYY-MM-DD
+    let formattedBirthday = birthday;
+    if (birthday) {
+      const date = new Date(birthday);
+      formattedBirthday = date.toISOString().split('T')[0];
+    }
+
     const [result] = await pool.query(
       `INSERT INTO students (name, gender, relation, phone, birthday, campus, remark, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, '在读')`,
-      [name, gender, relation, phone, birthday, campus, remark]
+      [name, gender, relation, phone, formattedBirthday, campus, remark]
     );
 
     res.json({
@@ -155,6 +162,13 @@ router.put('/:id', async (req, res) => {
       status
     } = req.body;
 
+    // 转换日期格式：ISO 8601 -> YYYY-MM-DD
+    let formattedBirthday = birthday;
+    if (birthday) {
+      const date = new Date(birthday);
+      formattedBirthday = date.toISOString().split('T')[0];
+    }
+
     const [result] = await pool.query(
       `UPDATE students SET
         name = COALESCE(?, name),
@@ -166,7 +180,7 @@ router.put('/:id', async (req, res) => {
         remark = COALESCE(?, remark),
         status = COALESCE(?, status)
        WHERE id = ?`,
-      [name, gender, relation, phone, birthday, campus, remark, status, id]
+      [name, gender, relation, phone, formattedBirthday, campus, remark, status, id]
     );
 
     if (result.affectedRows === 0) {

@@ -1,29 +1,33 @@
 <template>
   <div class="courses-container">
     <el-card>
-      <div class="page-header">
-        <h3>课程管理</h3>
-        <el-button type="primary">新建课程</el-button>
-      </div>
-      <el-table :data="[]" style="width: 100%" border>
-        <el-table-column prop="name" label="课程名称" />
-        <el-table-column prop="category" label="课程类别" />
-        <el-table-column prop="classCount" label="班级数" />
-        <el-table-column label="操作" />
-      </el-table>
+      <el-tabs v-model="activeTab">
+        <el-tab-pane label="课程列表" name="courses">
+          <CourseList />
+        </el-tab-pane>
+        <el-tab-pane label="升期关系列表" name="upgrades">
+          <UpgradeList />
+        </el-tab-pane>
+        <el-tab-pane label="课程类别" name="categories">
+          <CategoryList />
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+import CourseList from './components/CourseList.vue'
+import UpgradeList from './components/UpgradeList.vue'
+import CategoryList from './components/CategoryList.vue'
+
+const activeTab = ref('courses')
 </script>
 
 <style scoped lang="scss">
 .courses-container {
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  :deep(.el-tabs__header) {
     margin-bottom: 20px;
   }
 }

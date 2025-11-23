@@ -191,10 +191,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import dayjs from 'dayjs'
+import { getClassList, createClass, updateClass, deleteClass, finishClass } from '@/api/class'
 
 const activeTab = ref('organized')
 const classType = ref('校区')
@@ -285,14 +286,13 @@ const handleFinish = async (row: any) => {
       type: 'warning'
     })
 
-    const index = allClasses.value.findIndex(c => c.id === row.id)
-    if (index > -1) {
-      allClasses.value[index].status = '已结业'
-      ElMessage.success('结业成功')
-      loadTableData()
+    await finishClass(row.id)
+    ElMessage.success('结业成功')
+    await fetchClasses()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '结业失败')
     }
-  } catch {
-    // 取消
   }
 }
 
@@ -304,47 +304,48 @@ const handleDelete = async (row: any) => {
       type: 'warning'
     })
 
-    const index = allClasses.value.findIndex(c => c.id === row.id)
-    if (index > -1) {
-      allClasses.value.splice(index, 1)
-      pagination.total--
-      loadTableData()
-      ElMessage.success('删除成功')
+    await deleteClass(row.id)
+    ElMessage.success('删除成功')
+    await fetchClasses()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除失败')
     }
-  } catch {
-    // 取消
   }
 }
 
 const handleSubmit = async () => {
   if (!formRef.value) return
 
-  await formRef.value.validate((valid) => {
+  await formRef.value.validate(async (valid) => {
     if (valid) {
-      if (classForm.id) {
-        // 编辑
-        const index = allClasses.value.findIndex(c => c.id === classForm.id)
-        if (index > -1) {
-          allClasses.value[index] = { ...allClasses.value[index], ...classForm }
+      try {
+        const data = {
+          code: classForm.code,
+          teacher: classForm.teacher,
+          assistant: classForm.assistant,
+          course: classForm.course,
+          classroom: classForm.classroom,
+          capacity: classForm.capacity,
+          start_date: classForm.startDate ? dayjs(classForm.startDate).format('YYYY-MM-DD') : undefined,
+          end_date: classForm.endDate ? dayjs(classForm.endDate).format('YYYY-MM-DD') : undefined,
+          remark: classForm.remark
+        }
+
+        if (classForm.id) {
+          await updateClass(classForm.id, data)
           ElMessage.success('编辑成功')
+        } else {
+          await createClass(data)
+          ElMessage.success('新增成功')
         }
-      } else {
-        // 新增
-        const newClass = {
-          ...classForm,
-          id: String(Date.now()),
-          studentCount: 0,
-          status: '开班在读',
-          startDate: dayjs(classForm.startDate).format('YYYY-MM-DD'),
-          endDate: classForm.endDate ? dayjs(classForm.endDate).format('YYYY-MM-DD') : ''
-        }
-        allClasses.value.unshift(newClass)
-        pagination.total++
-        ElMessage.success('新增成功')
+
+        await fetchClasses()
+        dialogVisible.value = false
+        resetForm()
+      } catch (error: any) {
+        ElMessage.error(error.message || '操作失败')
       }
-      loadTableData()
-      dialogVisible.value = false
-      resetForm()
     }
   })
 }
@@ -384,6 +385,44 @@ const loadTableData = () => {
   const end = start + pagination.pageSize
   tableData.value = allClasses.value.slice(start, end)
 }
+
+// 从后端获取班级数据
+const fetchClasses = async () => {
+  try {
+    const res = await getClassList({
+      page: pagination.current,
+      pageSize: pagination.pageSize
+    })
+
+    if (res.code === 200) {
+      tableData.value = res.data.list.map((item: any) => ({
+        id: item.id,
+        code: item.code,
+        studentCount: item.student_count || 0,
+        capacity: item.capacity,
+        teacher: item.teacher,
+        assistant: item.assistant || '-',
+        course: item.course,
+        classroom: item.classroom || '-',
+        startDate: item.start_date,
+        endDate: item.end_date || '',
+        status: item.status || '开班在读'
+      }))
+      pagination.total = res.data.total
+      allClasses.value = [...tableData.value]
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载数据失败')
+    // 失败时使用 mock 数据
+    tableData.value = generateMockClasses()
+    allClasses.value = [...tableData.value]
+    pagination.total = tableData.value.length
+  }
+}
+
+onMounted(() => {
+  fetchClasses()
+})
 </script>
 
 <style scoped lang="scss">
