@@ -1,7 +1,13 @@
 const express = require('express');
+const multer = require('multer');
+const xlsx = require('xlsx');
 const { pool } = require('../config/db');
 
 const router = express.Router();
+
+// 配置 multer 用于文件上传
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 // 获取班级列表
 router.get('/', async (req, res) => {
@@ -14,31 +20,40 @@ router.get('/', async (req, res) => {
       keyword
     } = req.query;
 
-    let sql = 'SELECT * FROM classes WHERE 1=1';
+    let sql = `
+      SELECT
+        c.*,
+        COUNT(DISTINCT sca.student_id) as student_count
+      FROM classes c
+      LEFT JOIN student_class_assignments sca ON c.id = sca.class_id AND sca.status = 'active'
+      WHERE 1=1
+    `;
     const params = [];
 
     if (status) {
-      sql += ' AND status = ?';
+      sql += ' AND c.status = ?';
       params.push(status);
     }
 
     if (teacher) {
-      sql += ' AND teacher = ?';
+      sql += ' AND c.teacher = ?';
       params.push(teacher);
     }
 
     if (keyword) {
-      sql += ' AND (code LIKE ? OR course LIKE ?)';
+      sql += ' AND (c.code LIKE ? OR c.course LIKE ?)';
       params.push(`%${keyword}%`, `%${keyword}%`);
     }
 
+    sql += ' GROUP BY c.id';
+
     // 获取总数
-    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
-    const [countResult] = await pool.query(countSql, params);
+    const countSql = `SELECT COUNT(DISTINCT c.id) as total FROM classes c WHERE 1=1 ${params.length > 0 ? sql.substring(sql.indexOf('AND')) : ''}`;
+    const [countResult] = await pool.query(countSql, params.slice(0, params.length));
     const total = countResult[0].total;
 
     // 分页查询
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    sql += ' ORDER BY c.created_at DESC LIMIT ? OFFSET ?';
     const offset = (parseInt(page) - 1) * parseInt(pageSize);
     params.push(parseInt(pageSize), offset);
 
@@ -242,6 +257,346 @@ router.post('/:id/finish', async (req, res) => {
     });
   } catch (error) {
     console.error('结业班级错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 批量导入班级
+router.post('/import', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        code: 400,
+        message: '请上传文件'
+      });
+    }
+
+    // 解析 Excel 文件
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) {
+      return res.status(400).json({
+        code: 400,
+        message: '文件中没有数据'
+      });
+    }
+
+    const successList = [];
+    const failList = [];
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        try {
+          // 验证必填字段
+          if (!row['班级名称'] || !row['班主任'] || !row['课程']) {
+            failList.push({
+              row: i + 2,
+              data: row,
+              reason: '班级名称、班主任、课程不能为空'
+            });
+            continue;
+          }
+
+          // 插入班级
+          const [result] = await connection.query(
+            `INSERT INTO classes (code, capacity, teacher, assistant, course, classroom, start_date, end_date, remark, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              row['班级名称'],
+              row['班级容量'] || 20,
+              row['班主任'],
+              row['助教'] || '-',
+              row['课程'],
+              row['授课教室'] || '',
+              row['开班日期'] || null,
+              row['结束日期'] || null,
+              row['备注'] || '',
+              row['状态'] || '开班在读'
+            ]
+          );
+
+          successList.push({
+            row: i + 2,
+            data: row,
+            id: result.insertId
+          });
+        } catch (error) {
+          failList.push({
+            row: i + 2,
+            data: row,
+            reason: error.message
+          });
+        }
+      }
+
+      await connection.commit();
+
+      res.json({
+        code: 200,
+        message: `导入完成，成功 ${successList.length} 条，失败 ${failList.length} 条`,
+        data: {
+          success: successList,
+          fail: failList,
+          total: data.length
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('导入班级错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '导入失败：' + error.message
+    });
+  }
+});
+
+// 批量分配学员到班级
+router.post('/:id/assign-students', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { studentIds, operator = '系统管理员' } = req.body;
+
+    if (!studentIds || studentIds.length === 0) {
+      return res.status(400).json({
+        code: 400,
+        message: '请选择要分配的学员'
+      });
+    }
+
+    // 检查班级是否存在
+    const [classes] = await pool.query('SELECT * FROM classes WHERE id = ?', [id]);
+    if (classes.length === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '班级不存在'
+      });
+    }
+
+    const classInfo = classes[0];
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      const successList = [];
+      const failList = [];
+
+      for (const studentId of studentIds) {
+        try {
+          // 检查学员是否已在该班级
+          const [existing] = await connection.query(
+            'SELECT * FROM student_class_assignments WHERE student_id = ? AND class_id = ? AND status = "active"',
+            [studentId, id]
+          );
+
+          if (existing.length > 0) {
+            failList.push({ studentId, reason: '学员已在该班级' });
+            continue;
+          }
+
+          // 获取学员信息
+          const [students] = await connection.query('SELECT * FROM students WHERE id = ?', [studentId]);
+          if (students.length === 0) {
+            failList.push({ studentId, reason: '学员不存在' });
+            continue;
+          }
+
+          const student = students[0];
+
+          // 添加分班记录
+          await connection.query(
+            `INSERT INTO student_class_assignments
+             (student_id, student_name, class_id, class_name, course, school, grade, operator, operation_type, status, remark)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              studentId,
+              student.name,
+              id,
+              classInfo.code,
+              classInfo.course,
+              student.school || '暂无学校',
+              student.grade || '',
+              operator,
+              '分配进班',
+              'active',
+              `从学员管理分配至${classInfo.code}`
+            ]
+          );
+
+          successList.push({ studentId, studentName: student.name });
+        } catch (error) {
+          failList.push({ studentId, reason: error.message });
+        }
+      }
+
+      await connection.commit();
+
+      res.json({
+        code: 200,
+        message: `分配完成，成功 ${successList.length} 人，失败 ${failList.length} 人`,
+        data: {
+          success: successList,
+          fail: failList
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('分配学员错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 移除学员出班
+router.post('/:id/remove-students', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { studentIds, operator = '系统管理员', remark = '' } = req.body;
+
+    if (!studentIds || studentIds.length === 0) {
+      return res.status(400).json({
+        code: 400,
+        message: '请选择要移除的学员'
+      });
+    }
+
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      const successList = [];
+      const failList = [];
+
+      for (const studentId of studentIds) {
+        try {
+          // 更新原分班记录为无效
+          const [result] = await connection.query(
+            `UPDATE student_class_assignments SET status = 'inactive', updated_at = NOW() WHERE student_id = ? AND class_id = ? AND status = 'active'`,
+            [studentId, id]
+          );
+
+          if (result.affectedRows === 0) {
+            failList.push({ studentId, reason: '学员不在该班级' });
+            continue;
+          }
+
+          // 添加移出记录
+          const [assignment] = await connection.query(
+            'SELECT * FROM student_class_assignments WHERE student_id = ? AND class_id = ? ORDER BY created_at DESC LIMIT 1',
+            [studentId, id]
+          );
+
+          if (assignment.length > 0) {
+            await connection.query(
+              `INSERT INTO student_class_assignments
+               (student_id, student_name, class_id, class_name, course, school, grade, operator, operation_type, status, remark)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                studentId,
+                assignment[0].student_name,
+                id,
+                assignment[0].class_name,
+                assignment[0].course,
+                assignment[0].school,
+                assignment[0].grade,
+                operator,
+                '移出班级',
+                'removed',
+                remark || '从班级移除'
+              ]
+            );
+          }
+
+          successList.push({ studentId });
+        } catch (error) {
+          failList.push({ studentId, reason: error.message });
+        }
+      }
+
+      await connection.commit();
+
+      res.json({
+        code: 200,
+        message: `移除完成，成功 ${successList.length} 人，失败 ${failList.length} 人`,
+        data: {
+          success: successList,
+          fail: failList
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('移除学员错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 获取班级学员列表
+router.get('/:id/students', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, pageSize = 20 } = req.query;
+
+    // 获取总数
+    const [countResult] = await pool.query(
+      `SELECT COUNT(*) as total FROM student_class_assignments WHERE class_id = ? AND status = 'active'`,
+      [id]
+    );
+    const total = countResult[0].total;
+
+    // 分页查询
+    const offset = (parseInt(page) - 1) * parseInt(pageSize);
+    const [students] = await pool.query(
+      `SELECT sca.*, s.phone, s.parent_name, s.parent_phone
+       FROM student_class_assignments sca
+       LEFT JOIN students s ON sca.student_id = s.id
+       WHERE sca.class_id = ? AND sca.status = 'active'
+       ORDER BY sca.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [id, parseInt(pageSize), offset]
+    );
+
+    res.json({
+      code: 200,
+      data: {
+        list: students,
+        total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('获取班级学员错误:', error);
     res.status(500).json({
       code: 500,
       message: '服务器错误'

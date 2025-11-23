@@ -2,9 +2,10 @@
   <div class="schedule-container">
     <el-card>
       <el-tabs v-model="activeTab">
-        <el-tab-pane label="课表查看" name="view"></el-tab-pane>
+        <el-tab-pane label="排课" name="timetable"></el-tab-pane>
+        <el-tab-pane label="课程表" name="view"></el-tab-pane>
         <el-tab-pane label="日程列表" name="list"></el-tab-pane>
-        <el-tab-pane label="冲突管理" name="conflict"></el-tab-pane>
+        <el-tab-pane label="冲突日程" name="conflict"></el-tab-pane>
       </el-tabs>
 
       <div class="schedule-header">

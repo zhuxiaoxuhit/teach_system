@@ -272,49 +272,36 @@ router.get('/enrollments', async (req, res) => {
       keyword
     } = req.query;
 
-    let sql = `
-      SELECT
-        e.*,
-        s.name as student_name,
-        s.gender,
-        s.relation,
-        s.phone,
-        c.name as course_name,
-        c.teaching_mode as course_type
-      FROM student_enrollments e
-      LEFT JOIN students s ON e.student_id = s.id
-      LEFT JOIN courses c ON e.course_id = c.id
-      WHERE 1=1
-    `;
+    let sql = 'SELECT * FROM student_enrollments WHERE 1=1';
     const params = [];
 
     if (campus) {
-      sql += ' AND s.campus = ?';
+      sql += ' AND campus = ?';
       params.push(campus);
     }
 
     if (courseType) {
-      sql += ' AND c.teaching_mode = ?';
+      sql += ' AND course_type = ?';
       params.push(courseType);
     }
 
     if (status) {
-      sql += ' AND e.status = ?';
+      sql += ' AND status = ?';
       params.push(status);
     }
 
     if (keyword) {
-      sql += ' AND (s.name LIKE ? OR s.phone LIKE ?)';
+      sql += ' AND (student_name LIKE ? OR phone LIKE ?)';
       params.push(`%${keyword}%`, `%${keyword}%`);
     }
 
     // 获取总数
-    const countSql = sql.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
     const [countResult] = await pool.query(countSql, params);
     const total = countResult[0].total;
 
     // 分页查询
-    sql += ' ORDER BY e.created_at DESC LIMIT ? OFFSET ?';
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     const offset = (parseInt(page) - 1) * parseInt(pageSize);
     params.push(parseInt(pageSize), offset);
 
@@ -953,6 +940,577 @@ router.delete('/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('删除学员错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// ==================== 报读列表 API ====================
+
+// 获取学员报读列表
+router.get('/enrollments', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      pageSize = 20,
+      campus,
+      courseType,
+      status,
+      keyword
+    } = req.query;
+
+    let sql = 'SELECT * FROM student_enrollments WHERE 1=1';
+    const params = [];
+
+    if (campus) {
+      sql += ' AND campus = ?';
+      params.push(campus);
+    }
+
+    if (courseType) {
+      sql += ' AND course_type = ?';
+      params.push(courseType);
+    }
+
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
+    }
+
+    if (keyword) {
+      sql += ' AND (student_name LIKE ? OR phone LIKE ?)';
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
+
+    // 获取总数
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const [countResult] = await pool.query(countSql, params);
+    const total = countResult[0].total;
+
+    // 分页查询
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    const offset = (parseInt(page) - 1) * parseInt(pageSize);
+    params.push(parseInt(pageSize), offset);
+
+    const [enrollments] = await pool.query(sql, params);
+
+    res.json({
+      code: 200,
+      data: {
+        list: enrollments,
+        total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('获取报读列表错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 创建报读记录
+router.post('/enrollments', async (req, res) => {
+  try {
+    const enrollment = req.body;
+
+    const [result] = await pool.query(
+      `INSERT INTO student_enrollments (
+        student_id, student_name, gender, relation, phone,
+        course_type, course_name, total_class_hours, used_class_hours,
+        remaining_class_hours, total_amount, paid_amount, discount_amount,
+        refund_amount, balance, campus, status, remark
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        enrollment.student_id, enrollment.student_name, enrollment.gender,
+        enrollment.relation, enrollment.phone, enrollment.course_type,
+        enrollment.course_name, enrollment.total_class_hours || 0,
+        enrollment.used_class_hours || 0, enrollment.remaining_class_hours || 0,
+        enrollment.total_amount || 0, enrollment.paid_amount || 0,
+        enrollment.discount_amount || 0, enrollment.refund_amount || 0,
+        enrollment.balance || 0, enrollment.campus, enrollment.status || '在读',
+        enrollment.remark || ''
+      ]
+    );
+
+    res.json({
+      code: 200,
+      message: '创建成功',
+      data: { id: result.insertId }
+    });
+  } catch (error) {
+    console.error('创建报读记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 更新报读记录
+router.put('/enrollments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const enrollment = req.body;
+
+    const [result] = await pool.query(
+      `UPDATE student_enrollments SET
+        student_name = COALESCE(?, student_name),
+        gender = COALESCE(?, gender),
+        relation = COALESCE(?, relation),
+        phone = COALESCE(?, phone),
+        course_type = COALESCE(?, course_type),
+        course_name = COALESCE(?, course_name),
+        total_class_hours = COALESCE(?, total_class_hours),
+        used_class_hours = COALESCE(?, used_class_hours),
+        remaining_class_hours = COALESCE(?, remaining_class_hours),
+        total_amount = COALESCE(?, total_amount),
+        paid_amount = COALESCE(?, paid_amount),
+        discount_amount = COALESCE(?, discount_amount),
+        refund_amount = COALESCE(?, refund_amount),
+        balance = COALESCE(?, balance),
+        campus = COALESCE(?, campus),
+        status = COALESCE(?, status),
+        remark = COALESCE(?, remark)
+       WHERE id = ?`,
+      [
+        enrollment.student_name, enrollment.gender, enrollment.relation,
+        enrollment.phone, enrollment.course_type, enrollment.course_name,
+        enrollment.total_class_hours, enrollment.used_class_hours,
+        enrollment.remaining_class_hours, enrollment.total_amount,
+        enrollment.paid_amount, enrollment.discount_amount,
+        enrollment.refund_amount, enrollment.balance, enrollment.campus,
+        enrollment.status, enrollment.remark, id
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '报读记录不存在'
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '更新成功'
+    });
+  } catch (error) {
+    console.error('更新报读记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 删除报读记录
+router.delete('/enrollments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.query(
+      'DELETE FROM student_enrollments WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '报读记录不存在'
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '删除成功'
+    });
+  } catch (error) {
+    console.error('删除报读记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// ==================== 分班列表 ====================
+
+// 获取学员分班列表
+router.get('/class-assignments', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      pageSize = 20,
+      campus,
+      courseType,
+      className,
+      status,
+      keyword
+    } = req.query;
+
+    let sql = 'SELECT * FROM student_class_assignments WHERE 1=1';
+    const params = [];
+
+    if (campus) {
+      sql += ' AND campus = ?';
+      params.push(campus);
+    }
+
+    if (courseType) {
+      sql += ' AND course_type = ?';
+      params.push(courseType);
+    }
+
+    if (className) {
+      sql += ' AND class_name = ?';
+      params.push(className);
+    }
+
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
+    }
+
+    if (keyword) {
+      sql += ' AND (student_name LIKE ? OR phone LIKE ?)';
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
+
+    // 获取总数
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const [countResult] = await pool.query(countSql, params);
+    const total = countResult[0].total;
+
+    // 分页查询
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    const offset = (parseInt(page) - 1) * parseInt(pageSize);
+    params.push(parseInt(pageSize), offset);
+
+    const [assignments] = await pool.query(sql, params);
+
+    res.json({
+      code: 200,
+      data: {
+        list: assignments,
+        total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('获取分班列表错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 创建分班记录
+router.post('/class-assignments', async (req, res) => {
+  try {
+    const assignment = req.body;
+
+    const [result] = await pool.query(
+      `INSERT INTO student_class_assignments (
+        student_id, student_name, gender, phone, campus,
+        course_type, course_name, class_name, classroom, teacher,
+        schedule, class_type, enrollment_date, start_date, end_date,
+        status, remark
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        assignment.student_id, assignment.student_name, assignment.gender,
+        assignment.phone, assignment.campus, assignment.course_type,
+        assignment.course_name, assignment.class_name, assignment.classroom,
+        assignment.teacher, assignment.schedule, assignment.class_type || '随堂班',
+        assignment.enrollment_date, assignment.start_date, assignment.end_date,
+        assignment.status || '在读', assignment.remark || ''
+      ]
+    );
+
+    res.json({
+      code: 200,
+      message: '创建成功',
+      data: { id: result.insertId }
+    });
+  } catch (error) {
+    console.error('创建分班记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 更新分班记录
+router.put('/class-assignments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const assignment = req.body;
+
+    const [result] = await pool.query(
+      `UPDATE student_class_assignments SET
+        student_name = COALESCE(?, student_name),
+        gender = COALESCE(?, gender),
+        phone = COALESCE(?, phone),
+        campus = COALESCE(?, campus),
+        course_type = COALESCE(?, course_type),
+        course_name = COALESCE(?, course_name),
+        class_name = COALESCE(?, class_name),
+        classroom = COALESCE(?, classroom),
+        teacher = COALESCE(?, teacher),
+        schedule = COALESCE(?, schedule),
+        class_type = COALESCE(?, class_type),
+        enrollment_date = COALESCE(?, enrollment_date),
+        start_date = COALESCE(?, start_date),
+        end_date = COALESCE(?, end_date),
+        status = COALESCE(?, status),
+        remark = COALESCE(?, remark)
+       WHERE id = ?`,
+      [
+        assignment.student_name, assignment.gender, assignment.phone,
+        assignment.campus, assignment.course_type, assignment.course_name,
+        assignment.class_name, assignment.classroom, assignment.teacher,
+        assignment.schedule, assignment.class_type, assignment.enrollment_date,
+        assignment.start_date, assignment.end_date, assignment.status,
+        assignment.remark, id
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '分班记录不存在'
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '更新成功'
+    });
+  } catch (error) {
+    console.error('更新分班记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 删除分班记录
+router.delete('/class-assignments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.query(
+      'DELETE FROM student_class_assignments WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '分班记录不存在'
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '删除成功'
+    });
+  } catch (error) {
+    console.error('删除分班记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// ==================== 学员成绩 ====================
+
+// 获取学员成绩列表
+router.get('/scores', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      pageSize = 20,
+      courseName,
+      className,
+      examType,
+      startDate,
+      endDate,
+      keyword
+    } = req.query;
+
+    let sql = 'SELECT * FROM student_scores WHERE 1=1';
+    const params = [];
+
+    if (courseName) {
+      sql += ' AND course_name = ?';
+      params.push(courseName);
+    }
+
+    if (className) {
+      sql += ' AND class_name = ?';
+      params.push(className);
+    }
+
+    if (examType) {
+      sql += ' AND exam_type = ?';
+      params.push(examType);
+    }
+
+    if (startDate && endDate) {
+      sql += ' AND exam_date BETWEEN ? AND ?';
+      params.push(startDate, endDate);
+    }
+
+    if (keyword) {
+      sql += ' AND (student_name LIKE ? OR phone LIKE ?)';
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
+
+    // 获取总数
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const [countResult] = await pool.query(countSql, params);
+    const total = countResult[0].total;
+
+    // 分页查询
+    sql += ' ORDER BY exam_date DESC, created_at DESC LIMIT ? OFFSET ?';
+    const offset = (parseInt(page) - 1) * parseInt(pageSize);
+    params.push(parseInt(pageSize), offset);
+
+    const [scores] = await pool.query(sql, params);
+
+    res.json({
+      code: 200,
+      data: {
+        list: scores,
+        total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('获取成绩列表错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 创建成绩记录
+router.post('/scores', async (req, res) => {
+  try {
+    const score = req.body;
+
+    const [result] = await pool.query(
+      `INSERT INTO student_scores (
+        student_id, student_name, gender, phone, course_name,
+        class_name, score, exam_date, exam_type, campus,
+        class_count, remark
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        score.student_id, score.student_name, score.gender,
+        score.phone, score.course_name, score.class_name,
+        score.score, score.exam_date, score.exam_type,
+        score.campus, score.class_count || 0, score.remark || ''
+      ]
+    );
+
+    res.json({
+      code: 200,
+      message: '创建成功',
+      data: { id: result.insertId }
+    });
+  } catch (error) {
+    console.error('创建成绩记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 更新成绩记录
+router.put('/scores/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const score = req.body;
+
+    const [result] = await pool.query(
+      `UPDATE student_scores SET
+        student_name = COALESCE(?, student_name),
+        gender = COALESCE(?, gender),
+        phone = COALESCE(?, phone),
+        course_name = COALESCE(?, course_name),
+        class_name = COALESCE(?, class_name),
+        score = COALESCE(?, score),
+        exam_date = COALESCE(?, exam_date),
+        exam_type = COALESCE(?, exam_type),
+        campus = COALESCE(?, campus),
+        class_count = COALESCE(?, class_count),
+        remark = COALESCE(?, remark)
+       WHERE id = ?`,
+      [
+        score.student_name, score.gender, score.phone,
+        score.course_name, score.class_name, score.score,
+        score.exam_date, score.exam_type, score.campus,
+        score.class_count, score.remark, id
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '成绩记录不存在'
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '更新成功'
+    });
+  } catch (error) {
+    console.error('更新成绩记录错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 删除成绩记录
+router.delete('/scores/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.query(
+      'DELETE FROM student_scores WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        code: 404,
+        message: '成绩记录不存在'
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '删除成功'
+    });
+  } catch (error) {
+    console.error('删除成绩记录错误:', error);
     res.status(500).json({
       code: 500,
       message: '服务器错误'
