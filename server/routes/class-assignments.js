@@ -16,13 +16,8 @@ router.get('/', async (req, res) => {
     } = req.query;
 
     let sql = `
-      SELECT
-        sca.*,
-        s.phone as student_phone,
-        s.parent_name,
-        s.parent_phone
+      SELECT sca.*
       FROM student_class_assignments sca
-      LEFT JOIN students s ON sca.student_id = s.id
       WHERE 1=1
     `;
     const params = [];
@@ -43,10 +38,7 @@ router.get('/', async (req, res) => {
     }
 
     // 获取总数
-    const countSql = sql.replace(
-      'SELECT\n      sca.*,\n      s.phone as student_phone,\n      s.parent_name,\n      s.parent_phone\n    FROM',
-      'SELECT COUNT(*) as total FROM'
-    ).replace('LEFT JOIN students s ON sca.student_id = s.id', '');
+    const countSql = sql.replace('SELECT sca.*', 'SELECT COUNT(*) as total');
     const [countResult] = await pool.query(countSql, params);
     const total = countResult[0].total;
 

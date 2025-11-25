@@ -1,270 +1,156 @@
 <template>
-  <div class="conflict-list-container">
-    <!-- 日期范围选择 -->
-    <div class="date-control">
+  <div class="conflict-list">
+    <div class="filter-bar">
       <el-date-picker
-        v-model="dateRange"
+        v-model="filters.dateRange"
         type="daterange"
         range-separator="-"
         start-placeholder="开始日期"
         end-placeholder="结束日期"
         format="YYYY-MM-DD"
         value-format="YYYY-MM-DD"
-        @change="loadConflicts"
+        style="width: 280px;"
       />
-      <el-button type="primary" @click="loadConflicts">查询</el-button>
+      <el-button type="primary" @click="fetchConflicts">搜索</el-button>
+      <el-button @click="clearFilters">清空筛选</el-button>
     </div>
 
-    <!-- 冲突统计 -->
-    <div class="conflict-stats">
+    <div class="stat-info">
       <el-alert
-        v-if="conflicts.length > 0"
-        :title="`共 ${conflicts.length} 条冲突记录`"
+        v-if="conflictData.length > 0"
+        title="检测到时间冲突！"
         type="warning"
-        show-icon
         :closable="false"
-      />
-      <el-alert
-        v-else
-        title="暂无冲突记录"
-        type="success"
-        show-icon
-        :closable="false"
-      />
+      >
+        <template #default>
+          共检测到 {{ conflictData.length }} 处时间冲突，请及时调整排课安排
+        </template>
+      </el-alert>
+      <el-empty v-else description="暂无冲突日程" />
     </div>
 
-    <!-- 冲突列表 -->
-    <div v-loading="loading" class="conflict-list">
-      <el-table :data="conflicts" stripe border style="width: 100%">
-        <el-table-column type="index" label="序号" width="60" />
-        <el-table-column prop="schedule_date" label="上课日期" width="120">
-          <template #default="{ row }">
-            {{ formatDate(row.schedule_date) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="conflict_type" label="冲突类型" width="100">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.conflict_type === 'teacher' ? 'warning' : 'danger'"
-              size="small"
-            >
-              {{ row.conflict_type === 'teacher' ? '教师冲突' : '教室冲突' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-if="hasTeacherConflict"
-          prop="teacher_name"
-          label="教师"
-          width="100"
-        />
-        <el-table-column
-          v-if="hasClassroomConflict"
-          prop="classroom"
-          label="教室"
-          width="120"
-        />
-        <el-table-column label="排课1" min-width="200">
-          <template #default="{ row }">
-            <div class="conflict-detail">
-              <div class="time">{{ formatTime(row.start1) }}-{{ formatTime(row.end1) }}</div>
-              <div class="course">{{ row.course1 }}</div>
-              <div class="classroom" v-if="row.classroom1">{{ row.classroom1 }}</div>
-              <div class="teacher" v-if="row.teacher1">{{ row.teacher1 }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="排课2" min-width="200">
-          <template #default="{ row }">
-            <div class="conflict-detail">
-              <div class="time">{{ formatTime(row.start2) }}-{{ formatTime(row.end2) }}</div>
-              <div class="course">{{ row.course2 }}</div>
-              <div class="classroom" v-if="row.classroom2">{{ row.classroom2 }}</div>
-              <div class="teacher" v-if="row.teacher2">{{ row.teacher2 }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleResolve(row, 1)">
-              处理排课1
-            </el-button>
-            <el-button type="primary" link size="small" @click="handleResolve(row, 2)">
-              处理排课2
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
-
-    <!-- 处理冲突对话框 -->
-    <el-dialog
-      v-model="showResolveDialog"
-      title="处理冲突"
-      width="500px"
+    <el-table
+      v-if="conflictData.length > 0"
+      :data="conflictData"
+      style="width: 100%"
+      border
+      stripe
     >
-      <div class="resolve-options">
-        <p>请选择处理方式：</p>
-        <el-radio-group v-model="resolveAction">
-          <el-radio label="edit">调整时间</el-radio>
-          <el-radio label="cancel">取消排课</el-radio>
-          <el-radio label="delete">删除排课</el-radio>
-        </el-radio-group>
-      </div>
-      <template #footer>
-        <el-button @click="showResolveDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmResolve">确定</el-button>
-      </template>
-    </el-dialog>
+      <el-table-column prop="conflict_type" label="冲突类型" width="120">
+        <template #default="{ row }">
+          <el-tag :type="row.conflict_type === 'teacher' ? 'danger' : 'warning'" size="small">
+            {{ row.conflict_type === 'teacher' ? '教师冲突' : '教室冲突' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="schedule_date" label="日期" width="120" />
+      <el-table-column label="时间段" width="150">
+        <template #default="{ row }">
+          {{ row.start1 }} - {{ row.end1 }}
+        </template>
+      </el-table-column>
+      <el-table-column label="冲突对象" width="120">
+        <template #default="{ row }">
+          {{ row.conflict_type === 'teacher' ? row.teacher_name : row.classroom }}
+        </template>
+      </el-table-column>
+      <el-table-column label="排课1" min-width="200">
+        <template #default="{ row }">
+          <div>课程: {{ row.course1 || '-' }}</div>
+          <div>教室: {{ row.classroom1 || '-' }}</div>
+          <div v-if="row.conflict_type === 'teacher'">
+            教师: {{ row.teacher_name }}
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="排课2" min-width="200">
+        <template #default="{ row }">
+          <div>课程: {{ row.course2 || '-' }}</div>
+          <div>教室: {{ row.classroom2 || '-' }}</div>
+          <div v-if="row.conflict_type === 'teacher'">
+            教师: {{ row.teacher_name }}
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="{ row }">
+          <el-button type="primary" link @click="handleResolve(row)">处理</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
-import { getConflicts, cancelSchedule, deleteSchedule } from '@/api/schedules'
+import { getConflicts } from '@/api/schedules'
 
-const loading = ref(false)
-const dateRange = ref<[string, string]>([
-  dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
-  dayjs().add(7, 'day').format('YYYY-MM-DD')
-])
-
-const conflicts = ref<any[]>([])
-const showResolveDialog = ref(false)
-const resolveAction = ref('edit')
-const selectedConflict = ref<any>(null)
-const selectedScheduleIndex = ref(1)
-
-// 是否有教师冲突
-const hasTeacherConflict = computed(() => {
-  return conflicts.value.some(c => c.conflict_type === 'teacher')
+// 筛选条件
+const filters = reactive({
+  dateRange: [
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().endOf('month').format('YYYY-MM-DD')
+  ] as any
 })
 
-// 是否有教室冲突
-const hasClassroomConflict = computed(() => {
-  return conflicts.value.some(c => c.conflict_type === 'classroom')
-})
+// 冲突数据
+const conflictData = ref<any[]>([])
 
-// 加载冲突列表
-const loadConflicts = async () => {
-  loading.value = true
+// 获取冲突列表
+const fetchConflicts = async () => {
   try {
-    const res = await getConflicts({
-      startDate: dateRange.value[0],
-      endDate: dateRange.value[1]
-    })
-    if (res.code === 200) {
-      conflicts.value = res.data
+    const params: any = {}
+
+    if (filters.dateRange && filters.dateRange.length === 2) {
+      params.startDate = filters.dateRange[0]
+      params.endDate = filters.dateRange[1]
     }
-  } catch (error) {
-    ElMessage.error('加载冲突列表失败')
-  } finally {
-    loading.value = false
+
+    const res = await getConflicts(params)
+
+    if (res.code === 200) {
+      conflictData.value = res.data
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载冲突数据失败')
   }
 }
 
-// 格式化日期
-const formatDate = (date: string) => {
-  if (!date) return ''
-  return dayjs(date).format('YYYY-MM-DD')
-}
-
-// 格式化时间
-const formatTime = (time: string) => {
-  if (!time) return ''
-  return time.substring(0, 5)
+// 清空筛选
+const clearFilters = () => {
+  filters.dateRange = [
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().endOf('month').format('YYYY-MM-DD')
+  ]
+  fetchConflicts()
 }
 
 // 处理冲突
-const handleResolve = (conflict: any, index: number) => {
-  selectedConflict.value = conflict
-  selectedScheduleIndex.value = index
-  showResolveDialog.value = true
-}
-
-// 确认处理
-const confirmResolve = async () => {
-  const scheduleId = selectedScheduleIndex.value === 1
-    ? selectedConflict.value.schedule1_id
-    : selectedConflict.value.schedule2_id
-
-  try {
-    if (resolveAction.value === 'cancel') {
-      await cancelSchedule(scheduleId)
-      ElMessage.success('已取消排课')
-    } else if (resolveAction.value === 'delete') {
-      await ElMessageBox.confirm('确定删除这条排课吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
-      await deleteSchedule(scheduleId)
-      ElMessage.success('已删除排课')
-    } else if (resolveAction.value === 'edit') {
-      ElMessage.info('请前往日程列表编辑排课时间')
-    }
-    showResolveDialog.value = false
-    loadConflicts()
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error('操作失败')
-    }
-  }
+const handleResolve = (row: any) => {
+  ElMessage.info('冲突处理功能开发中')
 }
 
 onMounted(() => {
-  loadConflicts()
+  fetchConflicts()
 })
 </script>
 
 <style scoped lang="scss">
-.conflict-list-container {
-  .date-control {
+.conflict-list {
+  .filter-bar {
     display: flex;
     gap: 12px;
     margin-bottom: 16px;
   }
 
-  .conflict-stats {
+  .stat-info {
     margin-bottom: 16px;
   }
 
-  .conflict-list {
-    .conflict-detail {
-      font-size: 12px;
-
-      .time {
-        font-weight: 500;
-        color: #303133;
-        margin-bottom: 4px;
-      }
-
-      .course {
-        color: #606266;
-        margin-bottom: 2px;
-      }
-
-      .classroom,
-      .teacher {
-        color: #909399;
-        font-size: 11px;
-      }
-    }
-  }
-
-  .resolve-options {
-    p {
-      margin-bottom: 16px;
-      font-weight: 500;
-    }
-
-    .el-radio-group {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+  .el-table {
+    margin-top: 20px;
   }
 }
 </style>

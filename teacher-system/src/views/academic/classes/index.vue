@@ -1,88 +1,130 @@
 <template>
   <div class="classes-container">
     <el-card>
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="组织班级" name="organized"></el-tab-pane>
-        <el-tab-pane label="分组明细" name="details"></el-tab-pane>
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+        <el-tab-pane label="班级列表" name="list"></el-tab-pane>
+        <el-tab-pane label="导入记录" name="import-records"></el-tab-pane>
         <el-tab-pane label="分班操作日志" name="assignment-logs"></el-tab-pane>
       </el-tabs>
 
-      <!-- 组织班级标签页 -->
-      <div v-show="activeTab === 'organized'">
+      <!-- 班级列表 Tab -->
+      <div v-show="activeTab === 'list'">
+        <!-- 筛选条件 -->
         <div class="filter-bar">
-          <el-radio-group v-model="classType" size="default">
-            <el-radio-button label="校区">校区</el-radio-button>
-            <el-radio-button label="课程">课程</el-radio-button>
-            <el-radio-button label="班级">班级</el-radio-button>
-            <el-radio-button label="助教">助教</el-radio-button>
-            <el-radio-button label="上课人数">上课人数</el-radio-button>
-            <el-radio-button label="授课教室">授课教室</el-radio-button>
-            <el-radio-button label="班级状态">班级状态</el-radio-button>
-          </el-radio-group>
-          <el-button type="primary">清空筛选</el-button>
+          <el-select v-model="filters.classFilter" placeholder="班级" clearable style="width: 120px;" @change="fetchClasses">
+            <el-option label="全部班级" value=""></el-option>
+          </el-select>
+          <el-select v-model="filters.campus" placeholder="校区" clearable style="width: 120px;" @change="fetchClasses">
+            <el-option label="魏桥书院" value="魏桥书院"></el-option>
+          </el-select>
+          <el-select v-model="filters.courseType" placeholder="课程类型" clearable style="width: 130px;" @change="fetchClasses">
+            <el-option label="农小硬笔暑托" value="农小硬笔暑托"></el-option>
+            <el-option label="农小一对一课试课" value="农小一对一课试课"></el-option>
+            <el-option label="农小创意美术" value="农小创意美术"></el-option>
+          </el-select>
+          <el-select v-model="filters.teacher" placeholder="上课教师" clearable style="width: 120px;" @change="fetchClasses">
+            <el-option label="杨倩" value="杨倩"></el-option>
+            <el-option label="陈老师" value="陈老师"></el-option>
+            <el-option label="梁辰" value="梁辰"></el-option>
+          </el-select>
+          <el-select v-model="filters.orgStatus" placeholder="组织状态" clearable style="width: 120px;">
+            <el-option label="已组织" value="已组织"></el-option>
+            <el-option label="未组织" value="未组织"></el-option>
+          </el-select>
+          <el-select v-model="filters.status" placeholder="班级状态" clearable style="width: 120px;" @change="fetchClasses">
+            <el-option label="开班在读" value="开班在读"></el-option>
+            <el-option label="已结业" value="已结业"></el-option>
+          </el-select>
+          <el-select v-model="filters.teachingCampus" placeholder="授课校区" clearable style="width: 120px;">
+            <el-option label="魏桥书院" value="魏桥书院"></el-option>
+          </el-select>
+          <el-input
+            v-model="filters.keyword"
+            placeholder="请输入班级名称"
+            clearable
+            style="width: 200px;"
+            @keyup.enter="fetchClasses"
+          >
+            <template #append>
+              <el-button icon="Search" @click="fetchClasses" />
+            </template>
+          </el-input>
+          <el-button @click="clearFilters">清空筛选</el-button>
         </div>
 
+        <!-- 操作按钮 -->
         <div class="action-bar">
-          <div>
-            <el-button type="primary" @click="showAddDialog">新建班级</el-button>
-            <el-button @click="showImportDialog">导入班级</el-button>
+          <div class="action-left">
+            <el-button type="primary" @click="showAddDialog">班级建档</el-button>
             <el-button>延长课程</el-button>
-            <el-button @click="handleExport">导出班级</el-button>
+            <el-button @click="handleExport">导出已选班级</el-button>
           </div>
+          <el-button type="primary" @click="showImportDialog">批量导入</el-button>
         </div>
 
+        <!-- 统计信息 -->
         <div class="stat-info">
-          共显示 {{ pagination.total }} 班级，共计 {{ totalStudents }} 名 关联学员
+          当前班级 共计 {{ pagination.total }} 个；其中 班级 {{ pagination.total }} 个，共计学员: {{ totalStudents }} 名，关联课程班级 {{ totalCourses }} 个
         </div>
 
-        <el-table :data="tableData" style="width: 100%" border stripe>
-        <el-table-column type="selection" width="55" />
-        <el-table-column prop="code" label="班级名称" width="200" sortable>
-          <template #default="{ row }">
-            <div>
-              <el-tag size="small" type="info">班</el-tag>
-              {{ row.code }}
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="studentCount" label="人数" width="100" sortable>
-          <template #default="{ row }">
-            {{ row.studentCount }}/{{ row.capacity }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="teacher" label="班主任" width="120" />
-        <el-table-column prop="assistant" label="助教" width="100" />
-        <el-table-column prop="course" label="所属课程" width="200" />
-        <el-table-column prop="classroom" label="授课教室" width="150" />
-        <el-table-column prop="period" label="开班日期" width="200" sortable>
-          <template #default="{ row }">
-            {{ row.startDate }} ~ {{ row.endDate || '进行中' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="班级状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="row.status === '开班在读' ? 'success' : 'info'">
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
-          <template #default="{ row }">
-            <el-dropdown>
-              <el-button type="primary" link>
-                操作 <el-icon><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item @click="handleView(row)">查看详情</el-dropdown-item>
-                  <el-dropdown-item @click="handleEdit(row)">编辑</el-dropdown-item>
-                  <el-dropdown-item @click="handleFinish(row)">结业</el-dropdown-item>
-                  <el-dropdown-item divided @click="handleDelete(row)">删除</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
-        </el-table-column>
+        <!-- 表格 -->
+        <el-table
+          :data="tableData"
+          style="width: 100%"
+          border
+          stripe
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="55" />
+          <el-table-column prop="code" label="班级名称" width="200" sortable>
+            <template #default="{ row }">
+              <div class="class-name">
+                <el-tag size="small" type="success">班</el-tag>
+                <span>{{ row.code }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="人数" width="100" sortable>
+            <template #default="{ row }">
+              {{ row.studentCount }}/{{ row.capacity }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="teacher" label="班主任" width="120" />
+          <el-table-column prop="course" label="所属课程" width="200" />
+          <el-table-column label="开始结束时间" width="220" sortable>
+            <template #default="{ row }">
+              {{ row.startDate }} ~ {{ row.endDate || '进行中' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="上课时间" width="250">
+            <template #default="{ row }">
+              <span>{{ row.schedule || '每周一 ~ 19:10-11:10' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="班级状态" width="120">
+            <template #default="{ row }">
+              <el-tag :type="row.status === '开班在读' ? 'success' : 'info'">
+                {{ row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-dropdown>
+                <el-button type="primary" link>
+                  操作 <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="handleView(row)">查看详情</el-dropdown-item>
+                    <el-dropdown-item @click="handleEdit(row)">编辑</el-dropdown-item>
+                    <el-dropdown-item @click="handleFinish(row)">结业</el-dropdown-item>
+                    <el-dropdown-item divided @click="handleDelete(row)">删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+          </el-table-column>
         </el-table>
 
         <el-pagination
@@ -96,53 +138,128 @@
         />
       </div>
 
-      <!-- 分班操作日志标签页 -->
+      <!-- 导入记录 Tab -->
+      <div v-show="activeTab === 'import-records'">
+        <div class="filter-bar">
+          <el-date-picker
+            v-model="importFilters.dateRange"
+            type="daterange"
+            range-separator="-"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 280px;"
+          />
+          <el-select v-model="importFilters.status" placeholder="导入状态" clearable style="width: 120px;">
+            <el-option label="全部" value=""></el-option>
+            <el-option label="已完成" value="completed"></el-option>
+            <el-option label="失败" value="failed"></el-option>
+          </el-select>
+          <el-button type="primary" @click="fetchImportRecords">搜索</el-button>
+          <el-button @click="clearImportFilters">清空筛选</el-button>
+        </div>
+
+        <div class="stat-info">
+          共找到 {{ importPagination.total }} 条导入记录
+        </div>
+
+        <el-table :data="importTableData" style="width: 100%" border stripe>
+          <el-table-column prop="created_at" label="导入时间" width="180" sortable>
+            <template #default="{ row }">
+              {{ formatDateTime(row.created_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="filename" label="文件名" width="250" show-overflow-tooltip />
+          <el-table-column prop="operator" label="操作人" width="120" />
+          <el-table-column prop="total_count" label="总数" width="100" />
+          <el-table-column prop="success_count" label="成功" width="100">
+            <template #default="{ row }">
+              <span style="color: #67c23a;">{{ row.success_count }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="fail_count" label="失败" width="100">
+            <template #default="{ row }">
+              <span :style="{ color: row.fail_count > 0 ? '#f56c6c' : '#67c23a' }">{{ row.fail_count }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'completed' ? 'success' : 'danger'">
+                {{ row.status === 'completed' ? '已完成' : '失败' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="150">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.fail_count > 0"
+                type="primary"
+                link
+                @click="handleViewFailDetails(row)"
+              >
+                查看失败详情
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          v-model:current-page="importPagination.current"
+          v-model:page-size="importPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="importPagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleImportSizeChange"
+          @current-change="handleImportCurrentChange"
+        />
+      </div>
+
+      <!-- 分班操作日志 Tab -->
       <div v-show="activeTab === 'assignment-logs'">
-        <div class="log-filter-bar">
-          <div class="filter-left">
-            <el-select v-model="logFilters.operationType" placeholder="操作类型" clearable style="width: 150px;">
-              <el-option label="全部" value=""></el-option>
-              <el-option label="分配进班" value="分配进班"></el-option>
-              <el-option label="移出班级" value="移出班级"></el-option>
-              <el-option label="转班" value="转班"></el-option>
-            </el-select>
-            <el-date-picker
-              v-model="logFilters.dateRange"
-              type="daterange"
-              range-separator="-"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              style="width: 280px;"
-            />
-            <el-input
-              v-model="logFilters.keyword"
-              placeholder="搜索人姓名/班级名称"
-              style="width: 200px;"
-              clearable
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-            </el-input>
-            <el-button type="primary" @click="fetchAssignmentLogs">搜索</el-button>
-          </div>
-          <el-button @click="handleExportLogs">清空筛选</el-button>
+        <div class="filter-bar">
+          <el-select v-model="logFilters.operationType" placeholder="操作类型" clearable style="width: 150px;">
+            <el-option label="全部" value=""></el-option>
+            <el-option label="分配进班" value="分配进班"></el-option>
+            <el-option label="移出班级" value="移出班级"></el-option>
+            <el-option label="转班" value="转班"></el-option>
+          </el-select>
+          <el-date-picker
+            v-model="logFilters.dateRange"
+            type="daterange"
+            range-separator="-"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 280px;"
+          />
+          <el-input
+            v-model="logFilters.keyword"
+            placeholder="搜索人姓名/班级名称"
+            style="width: 200px;"
+            clearable
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+          <el-button type="primary" @click="fetchAssignmentLogs">搜索</el-button>
+          <el-button @click="clearLogFilters">清空筛选</el-button>
         </div>
 
         <div class="stat-info">
           共找到 {{ logPagination.total }} 条记录
         </div>
 
-        <el-table :data="logTableData" style="width: 100%" border>
+        <el-table :data="logTableData" style="width: 100%" border stripe>
           <el-table-column prop="created_at" label="时间" width="180" sortable>
             <template #default="{ row }">
               {{ formatDateTime(row.created_at) }}
             </template>
           </el-table-column>
           <el-table-column prop="operator" label="操作人" width="100" />
-          <el-table-column prop="student_name" label="学员" width="100" />
+          <el-table-column prop="student_name" label="学员" width="120" />
           <el-table-column prop="school" label="校区" width="120" />
           <el-table-column prop="class_name" label="班级" width="200" />
           <el-table-column prop="operation_type" label="操作类型" width="120">
@@ -170,17 +287,15 @@
       </div>
     </el-card>
 
-    <!-- 导入班级对话框 -->
+    <!-- 批量导入对话框 -->
     <el-dialog
       v-model="importDialogVisible"
-      title="批量导入"
+      title="批量导入班级"
       width="600px"
       @close="resetImport"
     >
       <div class="import-content">
         <div class="upload-area">
-          <el-icon class="upload-icon"><Upload /></el-icon>
-          <div class="upload-text">上传文件</div>
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
@@ -189,16 +304,17 @@
             accept=".xlsx,.xls"
             drag
           >
-            <div class="upload-hint">
-              <p>点击或拖拽您的文件到这里</p>
-              <p class="sub-hint">仅支持xlsx、xls格式</p>
+            <div class="upload-inner">
+              <el-icon class="upload-icon"><Upload /></el-icon>
+              <div class="upload-text">点击或拖拽您的文件到这里</div>
+              <div class="upload-hint">仅支持xlsx、xls格式</div>
             </div>
           </el-upload>
         </div>
 
         <div class="import-tips">
           <p>1. 文件格式必须为Excel格式，请遵循标准模板填写；</p>
-          <p>2. 导入数据中有重复班级将会覆盖，不存在的添加新纪录；</p>
+          <p>2. 导入数据中有重复班级将会覆盖，不存在的添加新记录；</p>
           <p>3. 班级数量为0-5000，一次导入请勿超过5000条</p>
           <p style="margin-top: 12px;">
             <el-button type="primary" link @click="downloadTemplate">点击下载导入模板</el-button>
@@ -327,42 +443,100 @@
         <el-button type="primary" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 失败详情对话框 -->
+    <el-dialog
+      v-model="failDetailsDialogVisible"
+      title="导入失败详情"
+      width="700px"
+    >
+      <el-table :data="currentFailDetails" style="width: 100%" max-height="400">
+        <el-table-column prop="row" label="行号" width="80" />
+        <el-table-column prop="reason" label="失败原因" min-width="200" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Document, Search } from '@element-plus/icons-vue'
+import { Upload, Document, Search, ArrowDown } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules, UploadInstance } from 'element-plus'
 import dayjs from 'dayjs'
-import { getClassList, createClass, updateClass, deleteClass, finishClass, importClasses } from '@/api/class'
+import {
+  getClassList,
+  createClass,
+  updateClass,
+  deleteClass,
+  finishClass,
+  importClasses,
+  getImportRecords
+} from '@/api/class'
 import { getAssignmentLogs } from '@/api/class-assignment'
 
-const activeTab = ref('organized')
-const classType = ref('校区')
+const activeTab = ref('list')
 const dialogVisible = ref(false)
 const importDialogVisible = ref(false)
+const failDetailsDialogVisible = ref(false)
 const dialogTitle = ref('新建班级')
 const formRef = ref<FormInstance>()
 const uploadRef = ref<UploadInstance>()
 const selectedFile = ref<any>(null)
 const importing = ref(false)
 const importResult = ref<any>(null)
+const currentFailDetails = ref<any[]>([])
 
-// 日志相关
-const logTableData = ref([])
+// 筛选条件
+const filters = reactive({
+  classFilter: '',
+  campus: '',
+  courseType: '',
+  teacher: '',
+  orgStatus: '',
+  status: '',
+  teachingCampus: '',
+  keyword: ''
+})
+
+// 导入记录筛选
+const importFilters = reactive({
+  dateRange: null as any,
+  status: ''
+})
+
+// 日志筛选
 const logFilters = reactive({
   operationType: '',
   dateRange: null as any,
   keyword: ''
 })
+
+// 表格数据
+const tableData = ref<any[]>([])
+const importTableData = ref<any[]>([])
+const logTableData = ref<any[]>([])
+
+// 分页
+const pagination = reactive({
+  current: 1,
+  pageSize: 20,
+  total: 0
+})
+
+const importPagination = reactive({
+  current: 1,
+  pageSize: 20,
+  total: 0
+})
+
 const logPagination = reactive({
   current: 1,
   pageSize: 20,
   total: 0
 })
 
+// 表单数据
 const classForm = reactive({
   id: '',
   code: '',
@@ -376,6 +550,7 @@ const classForm = reactive({
   remark: ''
 })
 
+// 表单验证规则
 const rules: FormRules = {
   code: [{ required: true, message: '请输入班级名称', trigger: 'blur' }],
   capacity: [{ required: true, message: '请输入班级容量', trigger: 'blur' }],
@@ -384,60 +559,160 @@ const rules: FormRules = {
   startDate: [{ required: true, message: '请选择开班日期', trigger: 'change' }]
 }
 
-const generateMockClasses = () => {
-  const codes = ['小硬笔-15:30', '一对一-20:15', '创意美术-15:40', '创意美术-17:30', '硬笔-15:40',
-    '英语-14:00', '数学-16:00', '语文-18:00', '科学-10:00', '体育-15:00']
-  const teachers = ['杨倩', '陈老师', '梁辰', '王老师', '李老师']
-  const courses = ['农小硬笔暑托', '农小一对一课试课', '农小创意美术', '农小英语', '农小数学']
-  const classrooms = ['1F教室1', '1F教室2', '2F教室1', '2F教室2', '艇搜音乐教室']
+// 统计数据
+const totalStudents = computed(() => {
+  return tableData.value.reduce((sum, c) => sum + (c.studentCount || 0), 0)
+})
 
-  const classes = []
-  for (let i = 0; i < 15; i++) {
-    classes.push({
-      id: String(i + 1),
-      code: `0${(i % 9) + 1}-农${codes[i % codes.length]}`,
-      studentCount: Math.floor(Math.random() * 20),
-      capacity: 20 + Math.floor(Math.random() * 10),
-      teacher: teachers[i % teachers.length],
-      assistant: Math.random() > 0.7 ? '助教' + (i % 3 + 1) : '-',
-      course: courses[i % courses.length],
-      classroom: classrooms[i % classrooms.length],
-      startDate: dayjs().subtract(Math.floor(Math.random() * 30), 'day').format('YYYY-MM-DD'),
-      endDate: Math.random() > 0.5 ? dayjs().add(Math.floor(Math.random() * 60), 'day').format('YYYY-MM-DD') : '',
-      status: '开班在读'
-    })
+const totalCourses = computed(() => {
+  return new Set(tableData.value.map(c => c.course)).size
+})
+
+// Tab切换
+const handleTabChange = (name: string) => {
+  if (name === 'import-records') {
+    fetchImportRecords()
+  } else if (name === 'assignment-logs') {
+    fetchAssignmentLogs()
   }
-  return classes
 }
 
-const allClasses = ref(generateMockClasses())
-const tableData = ref([...allClasses.value])
+// 获取班级列表
+const fetchClasses = async () => {
+  try {
+    const params: any = {
+      page: pagination.current,
+      pageSize: pagination.pageSize
+    }
 
-const pagination = reactive({
-  current: 1,
-  pageSize: 20,
-  total: 15
-})
+    if (filters.status) params.status = filters.status
+    if (filters.teacher) params.teacher = filters.teacher
+    if (filters.keyword) params.keyword = filters.keyword
 
-const totalStudents = computed(() => {
-  return allClasses.value.reduce((sum, c) => sum + c.studentCount, 0)
-})
+    const res = await getClassList(params)
 
+    if (res.code === 200) {
+      tableData.value = res.data.list.map((item: any) => ({
+        id: item.id,
+        code: item.code,
+        studentCount: item.student_count || 0,
+        capacity: item.capacity,
+        teacher: item.teacher,
+        assistant: item.assistant || '-',
+        course: item.course,
+        classroom: item.classroom || '-',
+        startDate: item.start_date,
+        endDate: item.end_date || '',
+        status: item.status || '开班在读',
+        schedule: '每周一 ~ 19:10-11:10'
+      }))
+      pagination.total = res.data.total
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载数据失败')
+  }
+}
+
+// 获取导入记录
+const fetchImportRecords = async () => {
+  try {
+    const params: any = {
+      page: importPagination.current,
+      pageSize: importPagination.pageSize
+    }
+
+    if (importFilters.dateRange && importFilters.dateRange.length === 2) {
+      params.startDate = importFilters.dateRange[0]
+      params.endDate = importFilters.dateRange[1]
+    }
+
+    if (importFilters.status) {
+      params.status = importFilters.status
+    }
+
+    const res = await getImportRecords(params)
+
+    if (res.code === 200) {
+      importTableData.value = res.data.list
+      importPagination.total = res.data.total
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载导入记录失败')
+  }
+}
+
+// 获取分班日志
+const fetchAssignmentLogs = async () => {
+  try {
+    const params: any = {
+      page: logPagination.current,
+      pageSize: logPagination.pageSize
+    }
+
+    if (logFilters.operationType) {
+      params.operationType = logFilters.operationType
+    }
+
+    if (logFilters.dateRange && logFilters.dateRange.length === 2) {
+      params.startDate = logFilters.dateRange[0]
+      params.endDate = logFilters.dateRange[1]
+    }
+
+    if (logFilters.keyword) {
+      params.keyword = logFilters.keyword
+    }
+
+    const res = await getAssignmentLogs(params)
+
+    if (res.code === 200) {
+      logTableData.value = res.data.list
+      logPagination.total = res.data.total
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载日志失败')
+  }
+}
+
+// 清空筛选
+const clearFilters = () => {
+  Object.keys(filters).forEach(key => {
+    filters[key as keyof typeof filters] = ''
+  })
+  fetchClasses()
+}
+
+const clearImportFilters = () => {
+  importFilters.dateRange = null
+  importFilters.status = ''
+  fetchImportRecords()
+}
+
+const clearLogFilters = () => {
+  logFilters.operationType = ''
+  logFilters.dateRange = null
+  logFilters.keyword = ''
+  fetchAssignmentLogs()
+}
+
+// 新建班级
 const showAddDialog = () => {
-  dialogTitle.value = '新建班级'
+  dialogTitle.value = '班级建档'
   dialogVisible.value = true
 }
 
+// 编辑班级
 const handleEdit = (row: any) => {
   dialogTitle.value = '编辑班级'
   Object.assign(classForm, row)
   dialogVisible.value = true
 }
 
+// 查看详情
 const handleView = (row: any) => {
   ElMessage.info(`查看班级: ${row.code}`)
 }
 
+// 结业班级
 const handleFinish = async (row: any) => {
   try {
     await ElMessageBox.confirm(`确定要结业班级"${row.code}"吗？`, '提示', {
@@ -456,6 +731,7 @@ const handleFinish = async (row: any) => {
   }
 }
 
+// 删除班级
 const handleDelete = async (row: any) => {
   try {
     await ElMessageBox.confirm(`确定要删除班级"${row.code}"吗？`, '提示', {
@@ -474,6 +750,7 @@ const handleDelete = async (row: any) => {
   }
 }
 
+// 提交表单
 const handleSubmit = async () => {
   if (!formRef.value) return
 
@@ -510,6 +787,7 @@ const handleSubmit = async () => {
   })
 }
 
+// 重置表单
 const resetForm = () => {
   if (formRef.value) {
     formRef.value.resetFields()
@@ -526,21 +804,25 @@ const resetForm = () => {
   classForm.remark = ''
 }
 
+// 导出
 const handleExport = () => {
   ElMessage.success('导出成功')
 }
 
+// 显示导入对话框
 const showImportDialog = () => {
   importDialogVisible.value = true
   importResult.value = null
   selectedFile.value = null
 }
 
+// 文件选择
 const handleFileChange = (file: any) => {
   selectedFile.value = file
   importResult.value = null
 }
 
+// 移除文件
 const removeFile = () => {
   selectedFile.value = null
   if (uploadRef.value) {
@@ -548,24 +830,12 @@ const removeFile = () => {
   }
 }
 
+// 下载模板
 const downloadTemplate = () => {
-  // 创建Excel模板数据
-  const template = [
-    ['班级名称', '班级容量', '班主任', '助教', '课程', '授课教室', '开班日期', '结束日期', '状态', '备注'],
-    ['01-农小硬笔-15:30', '20', '杨倩', '-', '农小硬笔暑托', '1F教室1', '2025-09-01', '', '开班在读', ''],
-    ['02-农小创意美术-16:00', '25', '陈老师', '助教1', '农小创意美术', '2F教室1', '2025-09-05', '', '开班在读', '示例备注']
-  ]
-
-  // 创建下载链接
-  const csvContent = template.map(row => row.join(',')).join('\n')
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = '班级导入模板.csv'
-  link.click()
-  URL.revokeObjectURL(link.href)
+  window.open('/templates/班级导入模板.xls', '_blank')
 }
 
+// 导入
 const handleImport = async () => {
   if (!selectedFile.value) {
     ElMessage.warning('请选择要导入的文件')
@@ -589,7 +859,6 @@ const handleImport = async () => {
       ElMessage.success(res.message)
       await fetchClasses()
 
-      // 如果全部成功，3秒后关闭对话框
       if (res.data.fail.length === 0) {
         setTimeout(() => {
           importDialogVisible.value = false
@@ -604,6 +873,7 @@ const handleImport = async () => {
   }
 }
 
+// 重置导入
 const resetImport = () => {
   selectedFile.value = null
   importResult.value = null
@@ -613,54 +883,10 @@ const resetImport = () => {
   }
 }
 
-const handleSizeChange = (size: number) => {
-  pagination.pageSize = size
-  loadTableData()
-}
-
-const handleCurrentChange = (page: number) => {
-  pagination.current = page
-  loadTableData()
-}
-
-const loadTableData = () => {
-  const start = (pagination.current - 1) * pagination.pageSize
-  const end = start + pagination.pageSize
-  tableData.value = allClasses.value.slice(start, end)
-}
-
-// 从后端获取班级数据
-const fetchClasses = async () => {
-  try {
-    const res = await getClassList({
-      page: pagination.current,
-      pageSize: pagination.pageSize
-    })
-
-    if (res.code === 200) {
-      tableData.value = res.data.list.map((item: any) => ({
-        id: item.id,
-        code: item.code,
-        studentCount: item.student_count || 0,
-        capacity: item.capacity,
-        teacher: item.teacher,
-        assistant: item.assistant || '-',
-        course: item.course,
-        classroom: item.classroom || '-',
-        startDate: item.start_date,
-        endDate: item.end_date || '',
-        status: item.status || '开班在读'
-      }))
-      pagination.total = res.data.total
-      allClasses.value = [...tableData.value]
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '加载数据失败')
-    // 失败时使用 mock 数据
-    tableData.value = generateMockClasses()
-    allClasses.value = [...tableData.value]
-    pagination.total = tableData.value.length
-  }
+// 查看失败详情
+const handleViewFailDetails = (row: any) => {
+  currentFailDetails.value = row.fail_details || []
+  failDetailsDialogVisible.value = true
 }
 
 // 格式化日期时间
@@ -668,36 +894,30 @@ const formatDateTime = (dateStr: string) => {
   return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
 }
 
-// 获取分班操作日志
-const fetchAssignmentLogs = async () => {
-  try {
-    const params: any = {
-      page: logPagination.current,
-      pageSize: logPagination.pageSize
-    }
+// 表格选择
+const handleSelectionChange = (selection: any[]) => {
+  console.log('选中的班级:', selection)
+}
 
-    if (logFilters.operationType) {
-      params.operationType = logFilters.operationType
-    }
+// 分页
+const handleSizeChange = (size: number) => {
+  pagination.pageSize = size
+  fetchClasses()
+}
 
-    if (logFilters.dateRange && logFilters.dateRange.length === 2) {
-      params.startDate = logFilters.dateRange[0]
-      params.endDate = logFilters.dateRange[1]
-    }
+const handleCurrentChange = (page: number) => {
+  pagination.current = page
+  fetchClasses()
+}
 
-    if (logFilters.keyword) {
-      params.keyword = logFilters.keyword
-    }
+const handleImportSizeChange = (size: number) => {
+  importPagination.pageSize = size
+  fetchImportRecords()
+}
 
-    const res = await getAssignmentLogs(params)
-
-    if (res.code === 200) {
-      logTableData.value = res.data.list
-      logPagination.total = res.data.total
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '加载日志失败')
-  }
+const handleImportCurrentChange = (page: number) => {
+  importPagination.current = page
+  fetchImportRecords()
 }
 
 const handleLogSizeChange = (size: number) => {
@@ -710,20 +930,6 @@ const handleLogCurrentChange = (page: number) => {
   fetchAssignmentLogs()
 }
 
-const handleExportLogs = () => {
-  logFilters.operationType = ''
-  logFilters.dateRange = null
-  logFilters.keyword = ''
-  fetchAssignmentLogs()
-}
-
-// 监听标签页切换
-watch(activeTab, (newVal) => {
-  if (newVal === 'assignment-logs') {
-    fetchAssignmentLogs()
-  }
-})
-
 onMounted(() => {
   fetchClasses()
 })
@@ -731,11 +937,13 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .classes-container {
+  padding: 20px;
+
   .filter-bar {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    gap: 12px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
   }
 
   .action-bar {
@@ -743,7 +951,7 @@ onMounted(() => {
     justify-content: space-between;
     margin-bottom: 16px;
 
-    & > div {
+    .action-left {
       display: flex;
       gap: 12px;
     }
@@ -755,42 +963,21 @@ onMounted(() => {
     color: #666;
   }
 
+  .class-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .el-pagination {
     margin-top: 20px;
     justify-content: flex-end;
-  }
-
-  .log-filter-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-
-    .filter-left {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
   }
 }
 
 .import-content {
   .upload-area {
-    text-align: center;
     margin-bottom: 20px;
-    position: relative;
-
-    .upload-icon {
-      font-size: 48px;
-      color: #409EFF;
-      margin-bottom: 12px;
-    }
-
-    .upload-text {
-      font-size: 16px;
-      font-weight: 500;
-      margin-bottom: 8px;
-    }
 
     :deep(.el-upload) {
       width: 100%;
@@ -801,13 +988,22 @@ onMounted(() => {
       padding: 40px 20px;
     }
 
-    .upload-hint {
-      p {
-        margin: 4px 0;
-        color: #666;
+    .upload-inner {
+      text-align: center;
+
+      .upload-icon {
+        font-size: 48px;
+        color: #409EFF;
+        margin-bottom: 12px;
       }
 
-      .sub-hint {
+      .upload-text {
+        font-size: 16px;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+
+      .upload-hint {
         font-size: 12px;
         color: #999;
       }

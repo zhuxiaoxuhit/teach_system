@@ -77,72 +77,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 获取导入记录列表
-router.get('/import-records', async (req, res) => {
-  try {
-    const {
-      page = 1,
-      pageSize = 20,
-      startDate,
-      endDate,
-      operator,
-      status
-    } = req.query;
-
-    let sql = 'SELECT * FROM class_import_records WHERE 1=1';
-    const params = [];
-
-    if (startDate && endDate) {
-      sql += ' AND DATE(created_at) BETWEEN ? AND ?';
-      params.push(startDate, endDate);
-    }
-
-    if (operator) {
-      sql += ' AND operator = ?';
-      params.push(operator);
-    }
-
-    if (status) {
-      sql += ' AND status = ?';
-      params.push(status);
-    }
-
-    // 获取总数
-    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
-    const [countResult] = await pool.query(countSql, params);
-    const total = countResult[0].total;
-
-    // 分页查询
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    const offset = (parseInt(page) - 1) * parseInt(pageSize);
-    params.push(parseInt(pageSize), offset);
-
-    const [records] = await pool.query(sql, params);
-
-    // 解析失败详情
-    const recordsWithDetails = records.map(record => ({
-      ...record,
-      fail_details: record.fail_details ? JSON.parse(record.fail_details) : []
-    }));
-
-    res.json({
-      code: 200,
-      data: {
-        list: recordsWithDetails,
-        total,
-        page: parseInt(page),
-        pageSize: parseInt(pageSize)
-      }
-    });
-  } catch (error) {
-    console.error('获取导入记录错误:', error);
-    res.status(500).json({
-      code: 500,
-      message: '服务器错误'
-    });
-  }
-});
-
 // 获取单个班级详情
 router.get('/:id', async (req, res) => {
   try {
@@ -681,6 +615,72 @@ router.get('/:id/students', async (req, res) => {
     });
   } catch (error) {
     console.error('获取班级学员错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器错误'
+    });
+  }
+});
+
+// 获取导入记录列表
+router.get('/import-records', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      pageSize = 20,
+      startDate,
+      endDate,
+      operator,
+      status
+    } = req.query;
+
+    let sql = 'SELECT * FROM class_import_records WHERE 1=1';
+    const params = [];
+
+    if (startDate && endDate) {
+      sql += ' AND DATE(created_at) BETWEEN ? AND ?';
+      params.push(startDate, endDate);
+    }
+
+    if (operator) {
+      sql += ' AND operator = ?';
+      params.push(operator);
+    }
+
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
+    }
+
+    // 获取总数
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const [countResult] = await pool.query(countSql, params);
+    const total = countResult[0].total;
+
+    // 分页查询
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    const offset = (parseInt(page) - 1) * parseInt(pageSize);
+    params.push(parseInt(pageSize), offset);
+
+    const [records] = await pool.query(sql, params);
+
+    // 解析失败详情
+    const recordsWithDetails = records.map(record => ({
+      ...record,
+      fail_details: record.fail_details ? JSON.parse(record.fail_details) : []
+    }));
+
+    res.json({
+      code: 200,
+      data: {
+        list: recordsWithDetails,
+        total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('获取导入记录错误:', error);
     res.status(500).json({
       code: 500,
       message: '服务器错误'

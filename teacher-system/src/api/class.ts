@@ -117,3 +117,12 @@ export function getClassStudents(classId: string, params: any) {
   })
 }
 
+// 获取导入记录列表
+export function getImportRecords(params: any) {
+  return request({
+    url: '/classes/import-records',
+    method: 'get',
+    params
+  })
+}
+
